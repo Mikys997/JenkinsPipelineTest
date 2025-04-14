@@ -1,0 +1,150 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Build Images') {
+            parallel {
+                stage('Build Service1') {
+                    steps {
+                        dir('service1') {
+                            bat 'docker build -t jerryonimo/jenkinspipelinetest-service1:latest .'
+                        }
+                    }
+                }
+
+                stage('Build Service2') {
+                    steps {
+                        dir('service2') {
+                            bat 'docker build -t jerryonimo/jenkinspipelinetest-service2:latest .'
+                        }
+                    }
+                }
+
+                stage('Build Nginx') {
+                    steps {
+                        dir('gateway') {
+                            bat 'docker build -t jerryonimo/jenkinspipelinetest-gateway:latest .'
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Push to Registry') {
+            steps {
+                withDockerRegistry(credentialsId: 'dockerhub-cred-test', url: 'https://index.docker.io/v1/') {
+                    bat 'docker push jerryonimo/jenkinspipelinetest-service1:latest'
+                    bat 'docker push jerryonimo/jenkinspipelinetest-service2:latest'
+                    bat 'docker push jerryonimo/jenkinspipelinetest-gateway:latest'
+                }
+            }
+        }
+
+        stage('Delete Images Locally') {
+            parallel {
+                stage("Delete Service1 Image") {
+                    steps {
+                        dir('service1') {
+                            bat 'docker rmi jerryonimo/jenkinspipelinetest-service1:latest'
+                        }
+                    }
+                }
+
+                stage("Delete Service2 Image") {
+                    steps {
+                        dir('service2') {
+                            bat 'docker rmi jerryonimo/jenkinspipelinetest-service2:latest'
+                        }
+                    }
+                }
+
+                stage("Delete Gateway Image") {
+                    steps {
+                        dir('gateway') {
+                            bat 'docker rmi jerryonimo/jenkinspipelinetest-gateway:latest'
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Stop Exist Containers') {
+            parallel {
+                stage('Stop Service1') {
+                    steps {
+                        dir('service1') {
+                            script {
+                                powershell '''
+                                    $containers = docker-compose ps -q
+                                    if ($null -ne $containers -and $containers.Count -gt 0) {
+                                        docker-compose down
+                                    }
+                                '''
+                            }
+                        }
+                    }
+                }
+
+                stage('Stop Service2') {
+                    steps {
+                        dir('service2') {
+                            script {
+                                powershell '''
+                                    $containers = docker-compose ps -q
+                                    if ($null -ne $containers -and $containers.Count -gt 0) {
+                                        Write-Host "Останавливаем существующие контейнеры..."
+                                        docker-compose down
+                                    }
+                                '''
+                            }
+                        }
+                    }
+                }
+
+                stage('Stop Nginx') {
+                    steps {
+                        dir('gateway') {
+                            script {
+                                powershell '''
+                                    $containers = docker-compose ps -q
+                                    if ($null -ne $containers -and $containers.Count -gt 0) {
+                                        Write-Host "Останавливаем существующие контейнеры..."
+                                        docker-compose down
+                                    }
+                                '''
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Deploy with Docker Compose') {
+            parallel {
+                stage('Start Service1') {
+                    steps {
+                        dir('service1') {
+                            bat 'docker-compose up -d --build'
+                        }
+                    }
+                }
+
+                stage('Start Service2') {
+                    steps {
+                        dir('service2') {
+                            bat 'docker-compose up -d --build'
+                        }
+                    }
+                }
+
+                stage('Start Nginx') {
+                    steps {
+                        dir('gateway') {
+                            bat 'docker-compose up -d --build'
+                        }
+                    }
+                }
+            }
+        }        
+    }
+}
